@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Date Diff</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.30.1/moment.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      color: #333;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 520px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #222;
+    }
+
+    textarea {
+      width: 100%;
+      height: 100px;
+      padding: 16px;
+      font-size: 1.2rem;
+      border: 2px solid #ddd;
+      border-radius: 12px;
+      resize: none;
+      font-family: inherit;
+      background: #fff;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #4a90d9;
+    }
+
+    .parsed-hint {
+      width: 100%;
+      font-size: 0.8rem;
+      color: #888;
+      padding: 0 4px;
+      margin-top: -6px;
+      min-height: 1.2em;
+    }
+
+    .arrow {
+      font-size: 2.4rem;
+      color: #999;
+      line-height: 1;
+      user-select: none;
+    }
+
+    .result {
+      width: 100%;
+      padding: 16px;
+      font-size: 1.3rem;
+      font-weight: 600;
+      text-align: center;
+      border-radius: 12px;
+      background: #e8f4e8;
+      color: #2a7a2a;
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .result.error {
+      background: #fde8e8;
+      color: #a33;
+    }
+
+    .result.empty {
+      background: #eee;
+      color: #999;
+      font-weight: 400;
+    }
+
+    .alt-formats {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .alt-format {
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #e8eef4;
+      color: #3a5a7a;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+
+    .alt-format .label {
+      font-weight: 400;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 2px;
+      opacity: 0.7;
+    }
+
+    .alt-format .value {
+      font-weight: 600;
+      font-size: 1.05rem;
+    }
+
+    .alt-formats.hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Date Diff</h1>
+    <textarea id="from" placeholder="e.g. last friday, 2024-01-15, Jan 3 2025"></textarea>
+    <div id="from-hint" class="parsed-hint"></div>
+    <div class="arrow">↓</div>
+    <textarea id="to" placeholder="e.g. today, now, March 10 2025"></textarea>
+    <div id="to-hint" class="parsed-hint"></div>
+    <div id="result" class="result empty">Enter two dates above</div>
+    <div id="alt-formats" class="alt-formats hidden">
+      <div class="alt-format"><div class="label">Total Months</div><div class="value" id="alt-months">—</div></div>
+      <div class="alt-format"><div class="label">Total Days</div><div class="value" id="alt-days">—</div></div>
+      <div class="alt-format"><div class="label">Total Hours</div><div class="value" id="alt-hours">—</div></div>
+      <div class="alt-format"><div class="label">Total Seconds</div><div class="value" id="alt-seconds">—</div></div>
+    </div>
+  </div>
+
+  <script>
+    const fromEl = document.getElementById('from');
+    const toEl = document.getElementById('to');
+    const resultEl = document.getElementById('result');
+    const altFormatsEl = document.getElementById('alt-formats');
+    const altMonthsEl = document.getElementById('alt-months');
+    const altDaysEl = document.getElementById('alt-days');
+    const altHoursEl = document.getElementById('alt-hours');
+    const altSecondsEl = document.getElementById('alt-seconds');
+    const fromHintEl = document.getElementById('from-hint');
+    const toHintEl = document.getElementById('to-hint');
+    let debounceTimer = null;
+
+    function resolveNatural(str) {
+      const s = str.trim().toLowerCase();
+      const now = moment();
+
+      if (s === 'now' || s === 'today') return now;
+      if (s === 'yesterday') return now.clone().subtract(1, 'day');
+      if (s === 'tomorrow') return now.clone().add(1, 'day');
+
+      const relMatch = s.match(/^(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago$/);
+      if (relMatch) {
+        return now.clone().subtract(parseInt(relMatch[1]), relMatch[2]);
+      }
+
+      const inMatch = s.match(/^in\s+(\d+)\s+(second|minute|hour|day|week|month|year)s?$/);
+      if (inMatch) {
+        return now.clone().add(parseInt(inMatch[1]), inMatch[2]);
+      }
+
+      const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+      const lastMatch = s.match(/^last\s+(.+)$/);
+      if (lastMatch) {
+        const dayIdx = days.indexOf(lastMatch[1]);
+        if (dayIdx !== -1) {
+          const diff = (now.day() - dayIdx + 7) % 7 || 7;
+          return now.clone().subtract(diff, 'days');
+        }
+        const unitMatch = lastMatch[1].match(/^(week|month|year)$/);
+        if (unitMatch) {
+          return now.clone().subtract(1, unitMatch[1]);
+        }
+      }
+
+      const nextMatch = s.match(/^next\s+(.+)$/);
+      if (nextMatch) {
+        const dayIdx = days.indexOf(nextMatch[1]);
+        if (dayIdx !== -1) {
+          const diff = (dayIdx - now.day() + 7) % 7 || 7;
+          return now.clone().add(diff, 'days');
+        }
+        const unitMatch = nextMatch[1].match(/^(week|month|year)$/);
+        if (unitMatch) {
+          return now.clone().add(1, unitMatch[1]);
+        }
+      }
+
+      return null;
+    }
+
+    function parseDate(str) {
+      const natural = resolveNatural(str);
+      if (natural && natural.isValid()) return natural;
+
+      const m = moment(str, [
+        moment.ISO_8601,
+        'YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY', 'MMMM D YYYY', 'MMMM D, YYYY',
+        'MMM D YYYY', 'MMM D, YYYY', 'D MMMM YYYY', 'D MMM YYYY',
+        'YYYY/MM/DD', 'DD-MM-YYYY', 'MM-DD-YYYY',
+        'MMMM D', 'MMM D', 'D MMMM', 'D MMM',
+        'MMMM YYYY', 'MMM YYYY',
+        'X', 'x'
+      ], true);
+
+      if (m.isValid()) return m;
+
+      const loose = moment(str);
+      if (loose.isValid()) return loose;
+
+      return null;
+    }
+
+    function humanDuration(a, b) {
+      let start = a, end = b;
+      let prefix = '';
+      if (a.isAfter(b)) {
+        start = b;
+        end = a;
+      }
+
+      const years = end.diff(start, 'years');
+      start.add(years, 'years');
+      const months = end.diff(start, 'months');
+      start.add(months, 'months');
+      const days = end.diff(start, 'days');
+      start.add(days, 'days');
+      const hours = end.diff(start, 'hours');
+      start.add(hours, 'hours');
+      const minutes = end.diff(start, 'minutes');
+      start.add(minutes, 'minutes');
+      const seconds = end.diff(start, 'seconds');
+
+      const parts = [];
+      if (years) parts.push(years + (years === 1 ? ' year' : ' years'));
+      if (months) parts.push(months + (months === 1 ? ' month' : ' months'));
+      if (days) parts.push(days + (days === 1 ? ' day' : ' days'));
+      if (hours) parts.push(hours + (hours === 1 ? ' hour' : ' hours'));
+      if (minutes) parts.push(minutes + (minutes === 1 ? ' minute' : ' minutes'));
+      if (seconds) parts.push(seconds + (seconds === 1 ? ' second' : ' seconds'));
+
+      if (parts.length === 0) return '0 seconds';
+      return parts.join(', ');
+    }
+
+    function compute() {
+      const fromStr = fromEl.value.trim();
+      const toStr = toEl.value.trim();
+
+      if (!fromStr || !toStr) {
+        resultEl.textContent = 'Enter two dates above';
+        resultEl.className = 'result empty';
+        altFormatsEl.classList.add('hidden');
+        if (!fromStr) fromHintEl.textContent = '';
+        if (!toStr) toHintEl.textContent = '';
+        return;
+      }
+
+      const a = parseDate(fromStr);
+      const b = parseDate(toStr);
+
+      fromHintEl.textContent = a ? 'assuming ' + a.format('YYYY-MM-DD') : '';
+      toHintEl.textContent = b ? 'assuming ' + b.format('YYYY-MM-DD') : '';
+
+      if (!a) {
+        resultEl.textContent = 'Could not parse first date';
+        resultEl.className = 'result error';
+        altFormatsEl.classList.add('hidden');
+        return;
+      }
+      if (!b) {
+        resultEl.textContent = 'Could not parse second date';
+        resultEl.className = 'result error';
+        altFormatsEl.classList.add('hidden');
+        return;
+      }
+
+      resultEl.textContent = humanDuration(a.clone(), b.clone());
+      resultEl.className = 'result';
+
+      const totalMonths = Math.abs(b.diff(a, 'months', true));
+      const totalDays = Math.abs(b.diff(a, 'days', true));
+      const totalHours = Math.abs(b.diff(a, 'hours', true));
+      const totalSeconds = Math.abs(b.diff(a, 'seconds'));
+
+      altMonthsEl.textContent = Math.floor(totalMonths).toLocaleString();
+      altDaysEl.textContent = Math.floor(totalDays).toLocaleString();
+      altHoursEl.textContent = Math.floor(totalHours).toLocaleString();
+      altSecondsEl.textContent = totalSeconds.toLocaleString();
+      altFormatsEl.classList.remove('hidden');
+    }
+
+    function onInput() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(compute, 500);
+    }
+
+    fromEl.addEventListener('input', onInput);
+    toEl.addEventListener('input', onInput);
+  </script>
+</body>
+</html>
