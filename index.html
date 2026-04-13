@@ -161,20 +161,30 @@
     const toHintEl = document.getElementById('to-hint');
     let debounceTimer = null;
 
+    // moment() returns the current date AND time. This app operates on dates only,
+    // so zero out the time-of-day fields to avoid nonzero h/m/s leaking into diffs.
+    function stripTime(m) {
+      return m.hours(0).minutes(0).seconds(0).milliseconds(0);
+    }
+
+    function currentDate() {
+      return stripTime(moment());
+    }
+
     function resolveNatural(str) {
       const s = str.trim().toLowerCase();
-      const now = moment();
+      const now = currentDate();
 
       if (s === 'now' || s === 'today') return now;
       if (s === 'yesterday') return now.clone().subtract(1, 'day');
       if (s === 'tomorrow') return now.clone().add(1, 'day');
 
-      const relMatch = s.match(/^(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago$/);
+      const relMatch = s.match(/^(\d+)\s+(day|week|month|year)s?\s+ago$/);
       if (relMatch) {
         return now.clone().subtract(parseInt(relMatch[1]), relMatch[2]);
       }
 
-      const inMatch = s.match(/^in\s+(\d+)\s+(second|minute|hour|day|week|month|year)s?$/);
+      const inMatch = s.match(/^in\s+(\d+)\s+(day|week|month|year)s?$/);
       if (inMatch) {
         return now.clone().add(parseInt(inMatch[1]), inMatch[2]);
       }
@@ -224,10 +234,10 @@
         'X', 'x'
       ], true);
 
-      if (m.isValid()) return m;
+      if (m.isValid()) return stripTime(m);
 
       const loose = moment(str);
-      if (loose.isValid()) return loose;
+      if (loose.isValid()) return stripTime(loose);
 
       return null;
     }
